@@ -9,7 +9,7 @@ const getUsers = asyncHandler(async (req, res) => {
   const limit = parseInt(req.query.limit) || 10;
   const skip = (page - 1) * limit;
 
-  const users = await User.find({})
+  const users = await User.find()
     .select('-password')
     .skip(skip)
     .limit(limit)
@@ -42,14 +42,6 @@ const getUser = asyncHandler(async (req, res) => {
     });
   }
 
-  // Users can only view their own profile unless they're admin
-  if (req.user.id !== req.params.id && req.user.role !== 'admin') {
-    return res.status(403).json({
-      success: false,
-      error: 'Not authorized to view this user'
-    });
-  }
-
   res.status(200).json({
     success: true,
     data: user
@@ -63,7 +55,7 @@ const createUser = asyncHandler(async (req, res) => {
   const { name, email, password, role } = req.body;
 
   // Check if user exists
-  const userExists = await User.findOne({ email });
+  const userExists = await User.findOne({ email: email.toLowerCase() });
 
   if (userExists) {
     return res.status(400).json({
@@ -95,32 +87,7 @@ const createUser = asyncHandler(async (req, res) => {
 // @route   PUT /api/users/:id
 // @access  Private
 const updateUser = asyncHandler(async (req, res) => {
-  const { name, email, role, isActive, settings } = req.body;
-
-  // Users can only update their own profile unless they're admin
-  if (req.user.id !== req.params.id && req.user.role !== 'admin') {
-    return res.status(403).json({
-      success: false,
-      error: 'Not authorized to update this user'
-    });
-  }
-
-  const updateData = {};
-  if (name) updateData.name = name;
-  if (email) updateData.email = email;
-  if (settings) updateData.settings = settings;
-
-  // Only admins can update role and active status
-  if (req.user.role === 'admin') {
-    if (role) updateData.role = role;
-    if (typeof isActive === 'boolean') updateData.isActive = isActive;
-  }
-
-  const user = await User.findByIdAndUpdate(
-    req.params.id,
-    updateData,
-    { new: true, runValidators: true }
-  ).select('-password');
+  const user = await User.findById(req.params.id);
 
   if (!user) {
     return res.status(404).json({
@@ -129,9 +96,24 @@ const updateUser = asyncHandler(async (req, res) => {
     });
   }
 
+  const { name, email, role } = req.body;
+
+  // Update fields
+  if (name) user.name = name;
+  if (email) user.email = email;
+  if (role) user.role = role;
+
+  await user.save();
+
   res.status(200).json({
     success: true,
-    data: user
+    data: {
+      id: user._id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      updatedAt: user.updatedAt
+    }
   });
 });
 
@@ -148,7 +130,7 @@ const deleteUser = asyncHandler(async (req, res) => {
     });
   }
 
-  await user.remove();
+  await User.findByIdAndDelete(req.params.id);
 
   res.status(200).json({
     success: true,
@@ -168,15 +150,15 @@ const getUserProfile = asyncHandler(async (req, res) => {
   });
 });
 
-// @desc    Update user profile
+// @desc    Update current user profile
 // @route   PUT /api/users/profile
 // @access  Private
 const updateUserProfile = asyncHandler(async (req, res) => {
-  const { name, email, settings } = req.body;
+  const { name, email } = req.body;
 
   const user = await User.findByIdAndUpdate(
     req.user.id,
-    { name, email, settings },
+    { name, email },
     { new: true, runValidators: true }
   ).select('-password');
 
@@ -194,8 +176,9 @@ const changePassword = asyncHandler(async (req, res) => {
 
   const user = await User.findById(req.user.id).select('+password');
 
+  // Check current password
   if (!(await user.comparePassword(currentPassword))) {
-    return res.status(400).json({
+    return res.status(401).json({
       success: false,
       error: 'Current password is incorrect'
     });

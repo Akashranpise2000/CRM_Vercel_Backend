@@ -24,13 +24,8 @@ const expenseSchema = new mongoose.Schema({
   category: {
     type: String,
     required: [true, 'Please specify a category'],
-<<<<<<< HEAD
-    enum: ['travel', 'food', 'accommodation', 'transportation', 'entertainment', 'marketing', 'equipment', 'software', 'consulting', 'other'],
-    default: 'other'
-=======
     enum: ['Travel', 'Meals', 'Office Supplies', 'Software', 'Marketing', 'Training', 'Equipment', 'Miscellaneous'],
     default: 'Miscellaneous'
->>>>>>> 52c36bae7ccd905b9092e37ff13c3ff68f315feb
   },
   subcategory: {
     type: String,

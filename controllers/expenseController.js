@@ -1,7 +1,7 @@
 const Expense = require('../models/Expense');
 const asyncHandler = require('../middlewares/asyncHandler');
 
-// @desc    Get all expenses
+// @desc    Get all expenses for the authenticated user
 // @route   GET /api/expenses
 // @access  Private
 const getExpenses = asyncHandler(async (req, res) => {
@@ -9,35 +9,15 @@ const getExpenses = asyncHandler(async (req, res) => {
   const limit = parseInt(req.query.limit) || 10;
   const skip = (page - 1) * limit;
 
-  const { category, start_date, end_date, opportunity_id } = req.query;
-
-  let query = { createdBy: req.user.id };
-
-  // Filter by category
-  if (category) {
-    query.category = category;
-  }
-
-  // Filter by opportunity
-  if (opportunity_id) {
-    query.opportunity_id = opportunity_id;
-  }
-
-  // Filter by date range
-  if (start_date || end_date) {
-    query.date = {};
-    if (start_date) query.date.$gte = new Date(start_date);
-    if (end_date) query.date.$lte = new Date(end_date);
-  }
-
-  const expenses = await Expense.find(query)
-    .populate('opportunity_id', 'title')
+  const expenses = await Expense.find({ createdBy: req.user.id })
+    .populate('opportunity', 'title')
     .populate('company', 'name')
+    .populate('contact', 'name')
     .skip(skip)
     .limit(limit)
     .sort({ date: -1 });
 
-  const total = await Expense.countDocuments(query);
+  const total = await Expense.countDocuments({ createdBy: req.user.id });
 
   res.status(200).json({
     success: true,
@@ -59,8 +39,10 @@ const getExpense = asyncHandler(async (req, res) => {
     _id: req.params.id,
     createdBy: req.user.id
   })
-  .populate('opportunity_id', 'title')
-  .populate('company', 'name');
+  .populate('opportunity', 'title')
+  .populate('company', 'name')
+  .populate('contact', 'name')
+  .populate('approvedBy', 'name');
 
   if (!expense) {
     return res.status(404).json({
@@ -75,27 +57,20 @@ const getExpense = asyncHandler(async (req, res) => {
   });
 });
 
-// @desc    Create expense
+// @desc    Create new expense
 // @route   POST /api/expenses
 // @access  Private
 const createExpense = asyncHandler(async (req, res) => {
-<<<<<<< HEAD
   const expenseData = {
     ...req.body,
-=======
-  const { company_id, ...expenseFields } = req.body;
-
-  const expenseData = {
-    ...expenseFields,
-    company: company_id,
->>>>>>> 52c36bae7ccd905b9092e37ff13c3ff68f315feb
     createdBy: req.user.id
   };
 
   const expense = await Expense.create(expenseData);
 
-  await expense.populate('opportunity_id', 'title');
+  await expense.populate('opportunity', 'title');
   await expense.populate('company', 'name');
+  await expense.populate('contact', 'name');
 
   res.status(201).json({
     success: true,
@@ -107,26 +82,10 @@ const createExpense = asyncHandler(async (req, res) => {
 // @route   PUT /api/expenses/:id
 // @access  Private
 const updateExpense = asyncHandler(async (req, res) => {
-<<<<<<< HEAD
-  const expense = await Expense.findOneAndUpdate(
-    { _id: req.params.id, createdBy: req.user.id },
-    req.body,
-=======
-  const { company_id, ...updateFields } = req.body;
-
-  const updateData = {
-    ...updateFields,
-    ...(company_id !== undefined && { company: company_id })
-  };
-
-  const expense = await Expense.findOneAndUpdate(
-    { _id: req.params.id, createdBy: req.user.id },
-    updateData,
->>>>>>> 52c36bae7ccd905b9092e37ff13c3ff68f315feb
-    { new: true, runValidators: true }
-  )
-  .populate('opportunity_id', 'title')
-  .populate('company', 'name');
+  const expense = await Expense.findOne({
+    _id: req.params.id,
+    createdBy: req.user.id
+  });
 
   if (!expense) {
     return res.status(404).json({
@@ -134,6 +93,20 @@ const updateExpense = asyncHandler(async (req, res) => {
       error: 'Expense not found'
     });
   }
+
+  // Update fields
+  Object.keys(req.body).forEach(key => {
+    if (req.body[key] !== undefined) {
+      expense[key] = req.body[key];
+    }
+  });
+
+  await expense.save();
+
+  await expense.populate('opportunity', 'title');
+  await expense.populate('company', 'name');
+  await expense.populate('contact', 'name');
+  await expense.populate('approvedBy', 'name');
 
   res.status(200).json({
     success: true,
@@ -157,7 +130,7 @@ const deleteExpense = asyncHandler(async (req, res) => {
     });
   }
 
-  await expense.remove();
+  await Expense.findByIdAndDelete(req.params.id);
 
   res.status(200).json({
     success: true,
@@ -169,24 +142,57 @@ const deleteExpense = asyncHandler(async (req, res) => {
 // @route   GET /api/expenses/category/:category
 // @access  Private
 const getExpensesByCategory = asyncHandler(async (req, res) => {
-  const expenses = await Expense.findByCategory(req.params.category, req.user.id);
+  const { category } = req.params;
+  const page = parseInt(req.query.page) || 1;
+  const limit = parseInt(req.query.limit) || 10;
+  const skip = (page - 1) * limit;
+
+  const expenses = await Expense.find({
+    category,
+    createdBy: req.user.id
+  })
+  .populate('opportunity', 'title')
+  .populate('company', 'name')
+  .populate('contact', 'name')
+  .skip(skip)
+  .limit(limit)
+  .sort({ date: -1 });
+
+  const total = await Expense.countDocuments({
+    category,
+    createdBy: req.user.id
+  });
 
   res.status(200).json({
     success: true,
-    data: expenses
+    data: expenses,
+    pagination: {
+      page,
+      limit,
+      total,
+      pages: Math.ceil(total / limit)
+    }
   });
 });
 
-// @desc    Get expense summary
-// @route   GET /api/expenses/summary
+// @desc    Get expense summary by category
+// @route   GET /api/expenses/analytics/summary
 // @access  Private
 const getExpenseSummary = asyncHandler(async (req, res) => {
-  const { start_date, end_date } = req.query;
+  const { startDate, endDate } = req.query;
 
-  const startDate = start_date ? new Date(start_date) : new Date(new Date().getFullYear(), new Date().getMonth(), 1);
-  const endDate = end_date ? new Date(end_date) : new Date();
+  if (!startDate || !endDate) {
+    return res.status(400).json({
+      success: false,
+      error: 'Please provide startDate and endDate query parameters'
+    });
+  }
 
-  const summary = await Expense.getExpenseSummary(req.user.id, startDate, endDate);
+  const summary = await Expense.getExpenseSummary(
+    req.user.id,
+    new Date(startDate),
+    new Date(endDate)
+  );
 
   res.status(200).json({
     success: true,
@@ -194,13 +200,20 @@ const getExpenseSummary = asyncHandler(async (req, res) => {
   });
 });
 
-// @desc    Get monthly expense data
-// @route   GET /api/expenses/monthly
+// @desc    Get monthly expenses
+// @route   GET /api/expenses/analytics/monthly
 // @access  Private
 const getMonthlyExpenses = asyncHandler(async (req, res) => {
-  const year = parseInt(req.query.year) || new Date().getFullYear();
+  const { year } = req.query;
 
-  const monthlyData = await Expense.getMonthlyExpenses(req.user.id, year);
+  if (!year) {
+    return res.status(400).json({
+      success: false,
+      error: 'Please provide year query parameter'
+    });
+  }
+
+  const monthlyData = await Expense.getMonthlyExpenses(req.user.id, parseInt(year));
 
   res.status(200).json({
     success: true,

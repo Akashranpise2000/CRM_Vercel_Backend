@@ -1,5 +1,4 @@
 const Opportunity = require('../models/Opportunity');
-const Company = require('../models/Company');
 const asyncHandler = require('../middlewares/asyncHandler');
 
 // @desc    Get all opportunities
@@ -10,7 +9,7 @@ const getOpportunities = asyncHandler(async (req, res) => {
   const limit = parseInt(req.query.limit) || 10;
   const skip = (page - 1) * limit;
 
-  const { search, status, priority, company_id } = req.query;
+  const { search, status, company_id } = req.query;
 
   let query = { createdBy: req.user.id };
 
@@ -18,18 +17,13 @@ const getOpportunities = asyncHandler(async (req, res) => {
   if (search) {
     query.$or = [
       { title: new RegExp(search, 'i') },
-      { sector: new RegExp(search, 'i') }
+      { description: new RegExp(search, 'i') }
     ];
   }
 
   // Filter by status
   if (status) {
     query.status = status;
-  }
-
-  // Filter by priority
-  if (priority) {
-    query.priority = priority;
   }
 
   // Filter by company
@@ -39,11 +33,10 @@ const getOpportunities = asyncHandler(async (req, res) => {
 
   const opportunities = await Opportunity.find(query)
     .populate('company_id', 'name industry')
-    .populate('contact_id', 'first_name last_name')
+    .populate('contact_id', 'first_name last_name email')
     .skip(skip)
     .limit(limit)
-    .sort({ createdAt: -1 })
-    .lean();
+    .sort({ createdAt: -1 });
 
   const total = await Opportunity.countDocuments(query);
 
@@ -67,8 +60,8 @@ const getOpportunity = asyncHandler(async (req, res) => {
     _id: req.params.id,
     createdBy: req.user.id
   })
-  .populate('company_id')
-  .populate('contact_id');
+  .populate('company_id', 'name industry website phone')
+  .populate('contact_id', 'first_name last_name email phone position');
 
   if (!opportunity) {
     return res.status(404).json({
@@ -87,29 +80,15 @@ const getOpportunity = asyncHandler(async (req, res) => {
 // @route   POST /api/opportunities
 // @access  Private
 const createOpportunity = asyncHandler(async (req, res) => {
-  const { company_data, ...opportunityFields } = req.body;
-
-  let companyId = opportunityFields.company_id;
-
-  // If company_data is provided, create the company first
-  if (company_data) {
-    const company = await Company.create({
-      ...company_data,
-      createdBy: req.user.id
-    });
-    companyId = company._id;
-  }
-
   const opportunityData = {
-    ...opportunityFields,
-    company_id: companyId,
+    ...req.body,
     createdBy: req.user.id
   };
 
   const opportunity = await Opportunity.create(opportunityData);
 
   await opportunity.populate('company_id', 'name industry');
-  await opportunity.populate('contact_id', 'first_name last_name');
+  await opportunity.populate('contact_id', 'first_name last_name email');
 
   res.status(201).json({
     success: true,
@@ -121,13 +100,10 @@ const createOpportunity = asyncHandler(async (req, res) => {
 // @route   PUT /api/opportunities/:id
 // @access  Private
 const updateOpportunity = asyncHandler(async (req, res) => {
-  const opportunity = await Opportunity.findOneAndUpdate(
-    { _id: req.params.id, createdBy: req.user.id },
-    req.body,
-    { new: true, runValidators: true }
-  )
-  .populate('company_id', 'name industry')
-  .populate('contact_id', 'first_name last_name');
+  const opportunity = await Opportunity.findOne({
+    _id: req.params.id,
+    createdBy: req.user.id
+  });
 
   if (!opportunity) {
     return res.status(404).json({
@@ -135,6 +111,12 @@ const updateOpportunity = asyncHandler(async (req, res) => {
       error: 'Opportunity not found'
     });
   }
+
+  Object.assign(opportunity, req.body);
+  await opportunity.save();
+
+  await opportunity.populate('company_id', 'name industry');
+  await opportunity.populate('contact_id', 'first_name last_name email');
 
   res.status(200).json({
     success: true,
@@ -158,7 +140,7 @@ const deleteOpportunity = asyncHandler(async (req, res) => {
     });
   }
 
-  await opportunity.remove();
+  await Opportunity.findByIdAndDelete(req.params.id);
 
   res.status(200).json({
     success: true,
@@ -174,7 +156,7 @@ const getOpportunitiesByCompany = asyncHandler(async (req, res) => {
     company_id: req.params.companyId,
     createdBy: req.user.id
   })
-  .populate('contact_id', 'first_name last_name')
+  .populate('contact_id', 'first_name last_name email')
   .sort({ createdAt: -1 });
 
   res.status(200).json({
@@ -184,10 +166,21 @@ const getOpportunitiesByCompany = asyncHandler(async (req, res) => {
 });
 
 // @desc    Get pipeline summary
-// @route   GET /api/opportunities/pipeline
+// @route   GET /api/opportunities/analytics/pipeline
 // @access  Private
 const getPipelineSummary = asyncHandler(async (req, res) => {
-  const pipeline = await Opportunity.getPipelineSummary();
+  const pipeline = await Opportunity.aggregate([
+    { $match: { createdBy: req.user.id } },
+    {
+      $group: {
+        _id: '$status',
+        count: { $sum: 1 },
+        totalValue: { $sum: '$amount' },
+        avgValue: { $avg: '$amount' }
+      }
+    },
+    { $sort: { _id: 1 } }
+  ]);
 
   res.status(200).json({
     success: true,
@@ -196,11 +189,21 @@ const getPipelineSummary = asyncHandler(async (req, res) => {
 });
 
 // @desc    Get forecast data
-// @route   GET /api/opportunities/forecast
+// @route   GET /api/opportunities/analytics/forecast
 // @access  Private
 const getForecastData = asyncHandler(async (req, res) => {
-  const currentYear = new Date().getFullYear();
-  const forecast = await Opportunity.getForecastByMonth(currentYear);
+  const forecast = await Opportunity.aggregate([
+    { $match: { createdBy: req.user.id, status: { $ne: 'closed_win' }, status: { $ne: 'lost' } } },
+    {
+      $group: {
+        _id: '$forecast',
+        count: { $sum: 1 },
+        totalValue: { $sum: '$forecast_amount' },
+        avgValue: { $avg: '$forecast_amount' }
+      }
+    },
+    { $sort: { _id: 1 } }
+  ]);
 
   res.status(200).json({
     success: true,

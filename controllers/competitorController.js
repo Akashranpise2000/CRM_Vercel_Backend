@@ -18,8 +18,7 @@ const getCompetitors = asyncHandler(async (req, res) => {
     query.$or = [
       { name: new RegExp(search, 'i') },
       { strength: new RegExp(search, 'i') },
-      { weakness: new RegExp(search, 'i') },
-      { keyFeatures: new RegExp(search, 'i') }
+      { weakness: new RegExp(search, 'i') }
     ];
   }
 
@@ -31,7 +30,7 @@ const getCompetitors = asyncHandler(async (req, res) => {
   const competitors = await Competitor.find(query)
     .skip(skip)
     .limit(limit)
-    .sort({ createdAt: -1 });
+    .sort({ created_at: -1 });
 
   const total = await Competitor.countDocuments(query);
 
@@ -90,11 +89,10 @@ const createCompetitor = asyncHandler(async (req, res) => {
 // @route   PUT /api/competitors/:id
 // @access  Private
 const updateCompetitor = asyncHandler(async (req, res) => {
-  const competitor = await Competitor.findOneAndUpdate(
-    { _id: req.params.id, createdBy: req.user.id },
-    req.body,
-    { new: true, runValidators: true }
-  );
+  const competitor = await Competitor.findOne({
+    _id: req.params.id,
+    createdBy: req.user.id
+  });
 
   if (!competitor) {
     return res.status(404).json({
@@ -102,6 +100,9 @@ const updateCompetitor = asyncHandler(async (req, res) => {
       error: 'Competitor not found'
     });
   }
+
+  Object.assign(competitor, req.body);
+  await competitor.save();
 
   res.status(200).json({
     success: true,
@@ -137,7 +138,17 @@ const deleteCompetitor = asyncHandler(async (req, res) => {
 // @route   GET /api/competitors/stats
 // @access  Private
 const getCompetitorStats = asyncHandler(async (req, res) => {
-  const stats = await Competitor.getStatistics();
+  const stats = await Competitor.aggregate([
+    { $match: { createdBy: req.user.id } },
+    {
+      $group: {
+        _id: '$status',
+        count: { $sum: 1 },
+        totalMarketShare: { $sum: '$marketShare' }
+      }
+    },
+    { $sort: { _id: 1 } }
+  ]);
 
   res.status(200).json({
     success: true,

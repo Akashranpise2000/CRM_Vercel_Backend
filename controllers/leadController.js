@@ -1,4 +1,7 @@
 const Lead = require('../models/Lead');
+const Contact = require('../models/Contact');
+const Company = require('../models/Company');
+const Opportunity = require('../models/Opportunity');
 const asyncHandler = require('../middlewares/asyncHandler');
 
 // @desc    Get all leads
@@ -9,19 +12,9 @@ const getLeads = asyncHandler(async (req, res) => {
   const limit = parseInt(req.query.limit) || 10;
   const skip = (page - 1) * limit;
 
-  const { search, status, priority, source } = req.query;
+  const { status, priority, source } = req.query;
 
   let query = { createdBy: req.user.id };
-
-  // Add search functionality
-  if (search) {
-    query.$or = [
-      { name: new RegExp(search, 'i') },
-      { email: new RegExp(search, 'i') },
-      { company: new RegExp(search, 'i') },
-      { position: new RegExp(search, 'i') }
-    ];
-  }
 
   // Filter by status
   if (status) {
@@ -41,7 +34,7 @@ const getLeads = asyncHandler(async (req, res) => {
   const leads = await Lead.find(query)
     .skip(skip)
     .limit(limit)
-    .sort({ score: -1, createdAt: -1 });
+    .sort({ created_at: -1 });
 
   const total = await Lead.countDocuments(query);
 
@@ -100,11 +93,10 @@ const createLead = asyncHandler(async (req, res) => {
 // @route   PUT /api/leads/:id
 // @access  Private
 const updateLead = asyncHandler(async (req, res) => {
-  const lead = await Lead.findOneAndUpdate(
-    { _id: req.params.id, createdBy: req.user.id },
-    req.body,
-    { new: true, runValidators: true }
-  );
+  const lead = await Lead.findOne({
+    _id: req.params.id,
+    createdBy: req.user.id
+  });
 
   if (!lead) {
     return res.status(404).json({
@@ -112,6 +104,9 @@ const updateLead = asyncHandler(async (req, res) => {
       error: 'Lead not found'
     });
   }
+
+  Object.assign(lead, req.body);
+  await lead.save();
 
   res.status(200).json({
     success: true,
@@ -135,7 +130,7 @@ const deleteLead = asyncHandler(async (req, res) => {
     });
   }
 
-  await lead.remove();
+  await Lead.findByIdAndDelete(req.params.id);
 
   res.status(200).json({
     success: true,
@@ -144,10 +139,14 @@ const deleteLead = asyncHandler(async (req, res) => {
 });
 
 // @desc    Get hot leads
-// @route   GET /api/leads/hot
+// @route   GET /api/leads/hot/list
 // @access  Private
 const getHotLeads = asyncHandler(async (req, res) => {
-  const leads = await Lead.findHotLeads();
+  const leads = await Lead.find({
+    createdBy: req.user.id,
+    status: 'Hot',
+    priority: 'high'
+  }).sort({ created_at: -1 });
 
   res.status(200).json({
     success: true,
@@ -159,8 +158,6 @@ const getHotLeads = asyncHandler(async (req, res) => {
 // @route   POST /api/leads/:id/convert
 // @access  Private
 const convertLead = asyncHandler(async (req, res) => {
-  const { contactData, companyData, opportunityData } = req.body;
-
   const lead = await Lead.findOne({
     _id: req.params.id,
     createdBy: req.user.id
@@ -173,59 +170,79 @@ const convertLead = asyncHandler(async (req, res) => {
     });
   }
 
-  const convertedData = {
-    convertedAt: new Date(),
-    convertedBy: req.user.id
+  const { create_company, create_opportunity } = req.body;
+  const result = { contact: null, company: null, opportunity: null };
+
+  // Create contact
+  const contactData = {
+    first_name: lead.name.split(' ')[0] || '',
+    last_name: lead.name.split(' ').slice(1).join(' ') || '',
+    email: lead.email,
+    phone: lead.phone,
+    position: lead.position,
+    createdBy: req.user.id
   };
 
-  // Create contact if provided
-  if (contactData) {
-    const Contact = require('../models/Contact');
-    const contact = await Contact.create({
-      ...contactData,
+  const contact = await Contact.create(contactData);
+  result.contact = contact;
+
+  // Create company if requested
+  if (create_company && lead.company) {
+    const companyData = {
+      name: lead.company,
+      industry: lead.industry,
+      website: lead.website,
+      email: lead.email,
       createdBy: req.user.id
-    });
-    convertedData.contact = contact._id;
+    };
+
+    const company = await Company.create(companyData);
+    contact.company_id = company._id;
+    await contact.save();
+    result.company = company;
   }
 
-  // Create company if provided
-  if (companyData) {
-    const Company = require('../models/Company');
-    const company = await Company.create({
-      ...companyData,
+  // Create opportunity if requested
+  if (create_opportunity && lead.value) {
+    const opportunityData = {
+      title: `Lead conversion: ${lead.name}`,
+      amount: lead.value,
+      contact_id: contact._id,
+      company_id: result.company?._id,
+      status: 'quality',
       createdBy: req.user.id
-    });
-    convertedData.company = company._id;
+    };
+
+    const opportunity = await Opportunity.create(opportunityData);
+    result.opportunity = opportunity;
   }
 
-  // Create opportunity if provided
-  if (opportunityData) {
-    const Opportunity = require('../models/Opportunity');
-    const opportunity = await Opportunity.create({
-      ...opportunityData,
-      createdBy: req.user.id
-    });
-    convertedData.opportunity = opportunity._id;
-  }
-
-  // Update lead with conversion data
-  lead.convertedTo = convertedData;
+  // Update lead status
+  lead.status = 'Won';
   await lead.save();
 
   res.status(200).json({
     success: true,
-    data: {
-      lead,
-      converted: convertedData
-    }
+    data: result,
+    message: 'Lead converted successfully'
   });
 });
 
 // @desc    Get lead statistics
-// @route   GET /api/leads/stats
+// @route   GET /api/leads/analytics/stats
 // @access  Private
 const getLeadStats = asyncHandler(async (req, res) => {
-  const stats = await Lead.getLeadStats(req.user.id);
+  const stats = await Lead.aggregate([
+    { $match: { createdBy: req.user.id } },
+    {
+      $group: {
+        _id: '$status',
+        count: { $sum: 1 },
+        totalValue: { $sum: '$value' }
+      }
+    },
+    { $sort: { _id: 1 } }
+  ]);
 
   res.status(200).json({
     success: true,
@@ -234,24 +251,23 @@ const getLeadStats = asyncHandler(async (req, res) => {
 });
 
 // @desc    Get lead conversion rate
-// @route   GET /api/leads/conversion-rate
+// @route   GET /api/leads/analytics/conversion
 // @access  Private
 const getConversionRate = asyncHandler(async (req, res) => {
-  const { start_date, end_date } = req.query;
+  const totalLeads = await Lead.countDocuments({ createdBy: req.user.id });
+  const convertedLeads = await Lead.countDocuments({
+    createdBy: req.user.id,
+    status: { $in: ['Won', 'won'] }
+  });
 
-  const startDate = start_date ? new Date(start_date) : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-  const endDate = end_date ? new Date(end_date) : new Date();
-
-  const rate = await Lead.getConversionRate(req.user.id, startDate, endDate);
+  const conversionRate = totalLeads > 0 ? (convertedLeads / totalLeads) * 100 : 0;
 
   res.status(200).json({
     success: true,
     data: {
-      conversionRate: rate,
-      period: {
-        start: startDate,
-        end: endDate
-      }
+      totalLeads,
+      convertedLeads,
+      conversionRate: Math.round(conversionRate * 100) / 100
     }
   });
 });

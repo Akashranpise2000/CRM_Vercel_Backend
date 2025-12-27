@@ -193,10 +193,6 @@ const deleteCompany = asyncHandler(async (req, res) => {
 
 // @desc    Get all companies for dropdown
 // @route   GET /api/companies/all
-<<<<<<< HEAD
-// @access  Private
-const getAllCompanies = asyncHandler(async (req, res) => {
-=======
 // @access  Public (for now to fix auth issue)
 const getAllCompanies = asyncHandler(async (req, res) => {
   // If no user (public access), return empty array for security
@@ -208,7 +204,6 @@ const getAllCompanies = asyncHandler(async (req, res) => {
     });
   }
 
->>>>>>> 52c36bae7ccd905b9092e37ff13c3ff68f315feb
   const companies = await Company.find({
     createdBy: req.user.id
   })

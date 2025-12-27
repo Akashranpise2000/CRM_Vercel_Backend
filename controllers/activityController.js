@@ -9,13 +9,23 @@ const getActivities = asyncHandler(async (req, res) => {
   const limit = parseInt(req.query.limit) || 10;
   const skip = (page - 1) * limit;
 
-  const { type, status, company_id, contact_id, opportunity_id, start_date, end_date } = req.query;
+  const { contact, opportunity, company, status } = req.query;
 
   let query = { createdBy: req.user.id };
 
-  // Filter by type
-  if (type) {
-    query.type = type;
+  // Filter by contact
+  if (contact) {
+    query.contact_id = contact;
+  }
+
+  // Filter by opportunity
+  if (opportunity) {
+    query.opportunity_id = opportunity;
+  }
+
+  // Filter by company
+  if (company) {
+    query.company_id = company;
   }
 
   // Filter by status
@@ -23,37 +33,13 @@ const getActivities = asyncHandler(async (req, res) => {
     query.status = status;
   }
 
-  // Filter by company
-  if (company_id) {
-    query.company_id = company_id;
-  }
-
-  // Filter by contact
-  if (contact_id) {
-    query.contact_id = contact_id;
-  }
-
-  // Filter by opportunity
-  if (opportunity_id) {
-    query.opportunity_id = opportunity_id;
-  }
-
-  // Filter by date range
-  if (start_date || end_date) {
-    query.start_time = {};
-    if (start_date) query.start_time.$gte = new Date(start_date);
-    if (end_date) query.start_time.$lte = new Date(end_date);
-  }
-
   const activities = await Activity.find(query)
-    .populate('company_id', 'name')
-    .populate('contact_id', 'first_name last_name')
-    .populate('opportunity_id', 'title')
-    .populate('assignedTo', 'name')
+    .populate('contact_id', 'first_name last_name email')
+    .populate('company_id', 'name industry')
+    .populate('opportunity_id', 'title amount')
     .skip(skip)
     .limit(limit)
-    .sort({ start_time: -1 })
-    .lean(); // Use lean() for better performance
+    .sort({ start_time: -1 });
 
   const total = await Activity.countDocuments(query);
 
@@ -77,10 +63,9 @@ const getActivity = asyncHandler(async (req, res) => {
     _id: req.params.id,
     createdBy: req.user.id
   })
-  .populate('company_id')
-  .populate('contact_id')
-  .populate('opportunity_id')
-  .populate('assignedTo', 'name');
+  .populate('contact_id', 'first_name last_name email phone')
+  .populate('company_id', 'name industry website phone')
+  .populate('opportunity_id', 'title amount status');
 
   if (!activity) {
     return res.status(404).json({
@@ -106,9 +91,9 @@ const createActivity = asyncHandler(async (req, res) => {
 
   const activity = await Activity.create(activityData);
 
-  await activity.populate('company_id', 'name');
-  await activity.populate('contact_id', 'first_name last_name');
-  await activity.populate('opportunity_id', 'title');
+  await activity.populate('contact_id', 'first_name last_name email');
+  await activity.populate('company_id', 'name industry');
+  await activity.populate('opportunity_id', 'title amount');
 
   res.status(201).json({
     success: true,
@@ -120,14 +105,10 @@ const createActivity = asyncHandler(async (req, res) => {
 // @route   PUT /api/activities/:id
 // @access  Private
 const updateActivity = asyncHandler(async (req, res) => {
-  const activity = await Activity.findOneAndUpdate(
-    { _id: req.params.id, createdBy: req.user.id },
-    req.body,
-    { new: true, runValidators: true }
-  )
-  .populate('company_id', 'name')
-  .populate('contact_id', 'first_name last_name')
-  .populate('opportunity_id', 'title');
+  const activity = await Activity.findOne({
+    _id: req.params.id,
+    createdBy: req.user.id
+  });
 
   if (!activity) {
     return res.status(404).json({
@@ -135,6 +116,13 @@ const updateActivity = asyncHandler(async (req, res) => {
       error: 'Activity not found'
     });
   }
+
+  Object.assign(activity, req.body);
+  await activity.save();
+
+  await activity.populate('contact_id', 'first_name last_name email');
+  await activity.populate('company_id', 'name industry');
+  await activity.populate('opportunity_id', 'title amount');
 
   res.status(200).json({
     success: true,
@@ -158,7 +146,7 @@ const deleteActivity = asyncHandler(async (req, res) => {
     });
   }
 
-  await activity.remove();
+  await Activity.findByIdAndDelete(req.params.id);
 
   res.status(200).json({
     success: true,
@@ -167,11 +155,22 @@ const deleteActivity = asyncHandler(async (req, res) => {
 });
 
 // @desc    Get upcoming activities
-// @route   GET /api/activities/upcoming
+// @route   GET /api/activities/upcoming/list
 // @access  Private
 const getUpcomingActivities = asyncHandler(async (req, res) => {
-  const limit = parseInt(req.query.limit) || 5;
-  const activities = await Activity.findUpcoming(limit);
+  const limit = parseInt(req.query.limit) || 10;
+  const now = new Date();
+
+  const activities = await Activity.find({
+    createdBy: req.user.id,
+    start_time: { $gte: now },
+    status: 'scheduled'
+  })
+  .populate('contact_id', 'first_name last_name email')
+  .populate('company_id', 'name industry')
+  .populate('opportunity_id', 'title amount')
+  .sort({ start_time: 1 })
+  .limit(limit);
 
   res.status(200).json({
     success: true,
@@ -180,10 +179,20 @@ const getUpcomingActivities = asyncHandler(async (req, res) => {
 });
 
 // @desc    Get overdue activities
-// @route   GET /api/activities/overdue
+// @route   GET /api/activities/overdue/list
 // @access  Private
 const getOverdueActivities = asyncHandler(async (req, res) => {
-  const activities = await Activity.findOverdue();
+  const now = new Date();
+
+  const activities = await Activity.find({
+    createdBy: req.user.id,
+    start_time: { $lt: now },
+    status: 'scheduled'
+  })
+  .populate('contact_id', 'first_name last_name email')
+  .populate('company_id', 'name industry')
+  .populate('opportunity_id', 'title amount')
+  .sort({ start_time: -1 });
 
   res.status(200).json({
     success: true,
@@ -192,7 +201,7 @@ const getOverdueActivities = asyncHandler(async (req, res) => {
 });
 
 // @desc    Get activities by date range
-// @route   GET /api/activities/range
+// @route   GET /api/activities/range/date
 // @access  Private
 const getActivitiesByDateRange = asyncHandler(async (req, res) => {
   const { start_date, end_date } = req.query;
@@ -204,10 +213,17 @@ const getActivitiesByDateRange = asyncHandler(async (req, res) => {
     });
   }
 
-  const activities = await Activity.findByDateRange(
-    new Date(start_date),
-    new Date(end_date)
-  );
+  const activities = await Activity.find({
+    createdBy: req.user.id,
+    start_time: {
+      $gte: new Date(start_date),
+      $lte: new Date(end_date)
+    }
+  })
+  .populate('contact_id', 'first_name last_name email')
+  .populate('company_id', 'name industry')
+  .populate('opportunity_id', 'title amount')
+  .sort({ start_time: 1 });
 
   res.status(200).json({
     success: true,

@@ -7,16 +7,43 @@ const asyncHandler = require('../middlewares/asyncHandler');
 const getSettings = asyncHandler(async (req, res) => {
   let settings = await Settings.findOne({ createdBy: req.user.id });
 
+  // If no settings exist, create default settings
   if (!settings) {
-    // Create default settings if not exists
-    settings = await Settings.createDefaultSettings(req.user.id, {
-      name: req.user.name,
-      email: req.user.email,
-      avatar: req.user.avatar
+    settings = await Settings.create({
+      createdBy: req.user.id,
+      sectors: ['Technology', 'Healthcare', 'Finance', 'Manufacturing', 'Energy', 'Education', 'Retail', 'Media'],
+      activity_types: ['Call', 'Email', 'Meeting', 'Demo', 'Proposal', 'Follow-up']
     });
   }
 
   res.status(200).json({
+    success: true,
+    data: settings
+  });
+});
+
+// @desc    Create user settings
+// @route   POST /api/settings
+// @access  Private
+const createSettings = asyncHandler(async (req, res) => {
+  // Check if settings already exist
+  const existingSettings = await Settings.findOne({ createdBy: req.user.id });
+
+  if (existingSettings) {
+    return res.status(400).json({
+      success: false,
+      error: 'Settings already exist for this user'
+    });
+  }
+
+  const settingsData = {
+    ...req.body,
+    createdBy: req.user.id
+  };
+
+  const settings = await Settings.create(settingsData);
+
+  res.status(201).json({
     success: true,
     data: settings
   });
@@ -26,21 +53,19 @@ const getSettings = asyncHandler(async (req, res) => {
 // @route   PUT /api/settings
 // @access  Private
 const updateSettings = asyncHandler(async (req, res) => {
-  const { user_name, user_email, user_avatar, sectors, activity_types, defaultSettings } = req.body;
+  let settings = await Settings.findOne({ createdBy: req.user.id });
 
-  const updateData = {};
-  if (user_name) updateData.user_name = user_name;
-  if (user_email) updateData.user_email = user_email;
-  if (user_avatar !== undefined) updateData.user_avatar = user_avatar;
-  if (sectors) updateData.sectors = sectors;
-  if (activity_types) updateData.activity_types = activity_types;
-  if (defaultSettings) updateData.defaultSettings = defaultSettings;
-
-  let settings = await Settings.findOneAndUpdate(
-    { createdBy: req.user.id },
-    updateData,
-    { new: true, runValidators: true, upsert: true }
-  );
+  if (!settings) {
+    // Create settings if they don't exist
+    settings = await Settings.create({
+      ...req.body,
+      createdBy: req.user.id
+    });
+  } else {
+    // Update existing settings
+    Object.assign(settings, req.body);
+    await settings.save();
+  }
 
   res.status(200).json({
     success: true,
@@ -48,29 +73,8 @@ const updateSettings = asyncHandler(async (req, res) => {
   });
 });
 
-// @desc    Create default settings for user
-// @route   POST /api/settings
-// @access  Private
-const createSettings = asyncHandler(async (req, res) => {
-  const settingsExists = await Settings.findOne({ createdBy: req.user.id });
-
-  if (settingsExists) {
-    return res.status(400).json({
-      success: false,
-      error: 'Settings already exist for this user'
-    });
-  }
-
-  const settings = await Settings.createDefaultSettings(req.user.id, req.body);
-
-  res.status(201).json({
-    success: true,
-    data: settings
-  });
-});
-
 module.exports = {
   getSettings,
-  updateSettings,
-  createSettings
+  createSettings,
+  updateSettings
 };

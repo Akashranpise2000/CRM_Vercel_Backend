@@ -14,14 +14,10 @@ const { protect } = require('../middlewares/authMiddleware');
 
 const router = express.Router();
 
-<<<<<<< HEAD
-// All routes require authentication
-=======
 // Get all contacts for dropdown (public for now to fix auth issue)
 router.get('/all', getAllContacts);
 
 // All other routes require authentication
->>>>>>> 52c36bae7ccd905b9092e37ff13c3ff68f315feb
 router.use(protect);
 
 router.route('/')
@@ -36,12 +32,6 @@ router.route('/:id')
 // Get contacts by company
 router.get('/company/:companyId', getContactsByCompany);
 
-<<<<<<< HEAD
-// Get all contacts for dropdown
-router.get('/all', getAllContacts);
-
-=======
->>>>>>> 52c36bae7ccd905b9092e37ff13c3ff68f315feb
 // Import contacts
 router.post('/import', importContacts);
 

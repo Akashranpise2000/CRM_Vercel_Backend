@@ -23,10 +23,7 @@ const expenseRoutes = require('./routes/expenseRoutes');
 const leadRoutes = require('./routes/leadRoutes');
 const settingsRoutes = require('./routes/settingsRoutes');
 const competitorRoutes = require('./routes/competitorRoutes');
-<<<<<<< HEAD
-=======
 const importRoutes = require('./routes/importRoutes');
->>>>>>> 52c36bae7ccd905b9092e37ff13c3ff68f315feb
 
 // Import middleware
 const { errorHandler } = require('./middlewares/errorMiddleware');
@@ -53,10 +50,10 @@ app.use(cors(corsOptions));
 
 // Rate limiting
 const limiter = rateLimit({
-  windowMs: (process.env.RATE_LIMIT_WINDOW || 15) * 60 * 1000, // 15 minutes
+  windowMs: (parseInt(process.env.RATE_LIMIT_WINDOW) || 15) * 60 * 1000, // 15 minutes
   max: process.env.NODE_ENV === 'development'
-    ? (process.env.RATE_LIMIT_MAX_REQUESTS || 500) // 500 requests in development
-    : (process.env.RATE_LIMIT_MAX_REQUESTS || 100), // 100 requests in production
+    ? (parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 500) // 500 requests in development
+    : (parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 100), // 100 requests in production
   message: {
     error: 'Too many requests from this IP, please try again later.'
   },
@@ -80,8 +77,8 @@ app.use(limiter);
 app.use('/api/auth', authLimiter);
 
 // Body parsing middleware
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(cookieParser());
 
 // Logging middleware
@@ -110,10 +107,7 @@ app.use('/api/expenses', expenseRoutes);
 app.use('/api/leads', leadRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/competitors', competitorRoutes);
-<<<<<<< HEAD
-=======
 app.use('/api/import', importRoutes);
->>>>>>> 52c36bae7ccd905b9092e37ff13c3ff68f315feb
 
 // Error handling middleware (must be last)
 app.use(notFound);
