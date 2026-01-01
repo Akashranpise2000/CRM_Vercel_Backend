@@ -6,13 +6,13 @@ const rateLimit = require('express-rate-limit');
 const cookieParser = require('cookie-parser');
 const dotenv = require('dotenv');
 
-// Load environment variables
+// Load env variables
 dotenv.config();
 
-// Import database connection
+// DB
 const connectDB = require('./db');
 
-// Import routes
+// Routes
 const authRoutes = require('./routes/authRoutes');
 const userRoutes = require('./routes/userRoutes');
 const contactRoutes = require('./routes/contactRoutes');
@@ -25,78 +25,70 @@ const settingsRoutes = require('./routes/settingsRoutes');
 const competitorRoutes = require('./routes/competitorRoutes');
 const importRoutes = require('./routes/importRoutes');
 
-// Import middleware
-const { errorHandler } = require('./middlewares/errorMiddleware');
-const { notFound } = require('./middlewares/errorMiddleware');
+// Error middleware
+const { errorHandler, notFound } = require('./middlewares/errorMiddleware');
 
-// Connect to database
+// Connect DB
 connectDB();
 
 const app = express();
 
-// Security middleware
+/* ---------------- SECURITY ---------------- */
 app.use(helmet());
 
-// CORS configuration
-const corsOptions = {
-  origin: process.env.CORS_ORIGIN || 'http://localhost:5173',
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
-  optionSuccessStatus: 200
-};
+/* ---------------- CORS (VERY IMPORTANT) ---------------- */
+const allowedOrigins = [
+  'http://localhost:5173',
+  'https://your-frontend.vercel.app'
+];
 
-app.use(cors(corsOptions));
+app.use(
+  cors({
+    origin: function (origin, callback) {
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error('CORS not allowed'));
+      }
+    },
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization']
+  })
+);
 
-// Rate limiting
-const limiter = rateLimit({
-  windowMs: (parseInt(process.env.RATE_LIMIT_WINDOW) || 15) * 60 * 1000, // 15 minutes
-  max: process.env.NODE_ENV === 'development'
-    ? (parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 500) // 500 requests in development
-    : (parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 100), // 100 requests in production
-  message: {
-    error: 'Too many requests from this IP, please try again later.'
-  },
-  standardHeaders: true,
-  legacyHeaders: false,
-});
+// Preflight support (FIXES YOUR ERROR)
+app.options('*', cors());
 
-// Rate limiting for auth routes - disabled in development for easier testing
-const authLimiter = process.env.NODE_ENV === 'development' ? (req, res, next) => next() : rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 10, // limit each IP to 10 auth requests per windowMs in production
-  message: {
-    error: 'Too many authentication attempts, please try again later.'
-  },
-  standardHeaders: true,
-  legacyHeaders: false,
-});
-
-app.use(limiter);
-// Apply auth limiter only to auth routes
-app.use('/api/auth', authLimiter);
-
-// Body parsing middleware
+/* ---------------- BODY PARSER ---------------- */
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(cookieParser());
 
-// Logging middleware
+/* ---------------- LOGGING ---------------- */
 if (process.env.NODE_ENV === 'development') {
   app.use(morgan('dev'));
 }
 
-// Health check endpoint
+/* ---------------- RATE LIMIT ---------------- */
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: process.env.NODE_ENV === 'development' ? 500 : 100,
+  standardHeaders: true,
+  legacyHeaders: false
+});
+app.use(limiter);
+
+/* ---------------- HEALTH CHECK ---------------- */
 app.get('/api/health', (req, res) => {
   res.status(200).json({
     success: true,
     message: 'CRM API is running',
-    timestamp: new Date().toISOString(),
-    environment: process.env.NODE_ENV || 'development'
+    env: process.env.NODE_ENV || 'development'
   });
 });
 
-// API routes
+/* ---------------- ROUTES ---------------- */
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/contacts', contactRoutes);
@@ -109,27 +101,9 @@ app.use('/api/settings', settingsRoutes);
 app.use('/api/competitors', competitorRoutes);
 app.use('/api/import', importRoutes);
 
-// Error handling middleware (must be last)
+/* ---------------- ERRORS ---------------- */
 app.use(notFound);
 app.use(errorHandler);
 
-const PORT = process.env.PORT || 5000;
-
-// Only start the server if this file is run directly (not required as a module)
-if (require.main === module) {
-  const server = app.listen(PORT, () => {
-    console.log(`Server running in ${process.env.NODE_ENV || 'development'} mode on port ${PORT}`);
-    console.log(`Health check available at: http://localhost:${PORT}/api/health`);
-  });
-
-  // Handle unhandled promise rejections
-  process.on('unhandledRejection', (err, promise) => {
-    console.log(`Error: ${err.message}`);
-    // Close server & exit process
-    server.close(() => {
-      process.exit(1);
-    });
-  });
-}
-
-module.exports = app;"app.use('/api/import', importRoutes);" 
+/* ❌ DO NOT LISTEN ON VERCEL */
+module.exports = app;
