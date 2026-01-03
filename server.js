@@ -9,6 +9,16 @@ const dotenv = require('dotenv');
 // Load env variables
 dotenv.config();
 
+// Check required environment variables
+const requiredEnvVars = ['MONGODB_URI', 'JWT_SECRET'];
+const missingVars = requiredEnvVars.filter(varName => !process.env[varName]);
+
+if (missingVars.length > 0) {
+  console.error('Missing required environment variables:', missingVars.join(', '));
+  console.error('Please set these in your Vercel project settings under Environment Variables');
+  // Don't exit in serverless, but log the error
+}
+
 // DB
 const connectDB = require('./db');
 
@@ -28,8 +38,12 @@ const importRoutes = require('./routes/importRoutes');
 // Error middleware
 const { errorHandler, notFound } = require('./middlewares/errorMiddleware');
 
-// Connect DB
-connectDB();
+// Connect DB (with error handling for serverless)
+try {
+  connectDB();
+} catch (error) {
+  console.error('Database connection failed:', error.message);
+}
 
 const app = express();
 

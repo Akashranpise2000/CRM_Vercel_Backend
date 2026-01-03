@@ -6,7 +6,16 @@ dotenv.config();
 
 const connectDB = async () => {
   try {
-    const mongoURI = process.env.MONGODB_URI || 'mongodb://localhost:27017/crm_db';
+    const mongoURI = process.env.MONGODB_URI;
+
+    if (!mongoURI) {
+      throw new Error('MONGODB_URI environment variable is not set');
+    }
+
+    // For serverless, avoid multiple connections
+    if (mongoose.connection.readyState >= 1) {
+      return;
+    }
 
     const conn = await mongoose.connect(mongoURI, {
       useNewUrlParser: true,
@@ -24,16 +33,23 @@ const connectDB = async () => {
       console.log('MongoDB disconnected');
     });
 
-    // Graceful shutdown
-    process.on('SIGINT', async () => {
-      await mongoose.connection.close();
-      console.log('MongoDB connection closed through app termination');
-      process.exit(0);
-    });
+    // Graceful shutdown (only for non-serverless)
+    if (process.env.NODE_ENV !== 'production') {
+      process.on('SIGINT', async () => {
+        await mongoose.connection.close();
+        console.log('MongoDB connection closed through app termination');
+        process.exit(0);
+      });
+    }
 
   } catch (error) {
     console.error('Error connecting to MongoDB:', error.message);
-    process.exit(1);
+    // In serverless, don't exit, just log
+    if (process.env.NODE_ENV === 'production') {
+      throw error; // Let it bubble up for serverless error handling
+    } else {
+      process.exit(1);
+    }
   }
 };
 
