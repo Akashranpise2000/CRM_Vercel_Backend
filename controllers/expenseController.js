@@ -1,4 +1,6 @@
 const Expense = require('../models/Expense');
+const Settings = require('../models/Settings');
+const smsService = require('../services/smsService');
 const asyncHandler = require('../middlewares/asyncHandler');
 
 // @desc    Get all expenses for the authenticated user
@@ -10,7 +12,7 @@ const getExpenses = asyncHandler(async (req, res) => {
   const skip = (page - 1) * limit;
 
   const expenses = await Expense.find({ createdBy: req.user.id })
-    .populate('opportunity', 'title')
+    .populate('opportunity_id', 'title')
     .populate('company', 'name')
     .populate('contact', 'name')
     .skip(skip)
@@ -39,7 +41,7 @@ const getExpense = asyncHandler(async (req, res) => {
     _id: req.params.id,
     createdBy: req.user.id
   })
-  .populate('opportunity', 'title')
+  .populate('opportunity_id', 'title')
   .populate('company', 'name')
   .populate('contact', 'name')
   .populate('approvedBy', 'name');
@@ -68,9 +70,45 @@ const createExpense = asyncHandler(async (req, res) => {
 
   const expense = await Expense.create(expenseData);
 
-  await expense.populate('opportunity', 'title');
+  await expense.populate('opportunity_id', 'title');
   await expense.populate('company', 'name');
   await expense.populate('contact', 'name');
+
+  // Send SMS notification if enabled
+  try {
+    const settings = await Settings.findOne({ createdBy: req.user.id });
+
+    if (settings?.smsSettings?.enabled &&
+        settings.smsSettings.twilioAccountSid &&
+        settings.smsSettings.twilioAuthToken &&
+        settings.smsSettings.twilioPhoneNumber &&
+        settings.smsSettings.recipientPhoneNumber) {
+
+      // Initialize SMS service with user settings
+      const initialized = smsService.initialize(
+        settings.smsSettings.twilioAccountSid,
+        settings.smsSettings.twilioAuthToken,
+        settings.smsSettings.twilioPhoneNumber
+      );
+
+      if (initialized) {
+        // Send SMS notification (non-blocking)
+        const smsResult = await smsService.sendExpenseNotification(
+          settings.smsSettings.recipientPhoneNumber,
+          {
+            title: expense.title,
+            amount: expense.amount,
+            category: expense.category
+          }
+        );
+
+        console.log('SMS notification result:', smsResult);
+      }
+    }
+  } catch (smsError) {
+    // Log SMS error but don't fail the expense creation
+    console.error('SMS notification failed:', smsError);
+  }
 
   res.status(201).json({
     success: true,
@@ -103,7 +141,7 @@ const updateExpense = asyncHandler(async (req, res) => {
 
   await expense.save();
 
-  await expense.populate('opportunity', 'title');
+  await expense.populate('opportunity_id', 'title');
   await expense.populate('company', 'name');
   await expense.populate('contact', 'name');
   await expense.populate('approvedBy', 'name');
@@ -151,7 +189,7 @@ const getExpensesByCategory = asyncHandler(async (req, res) => {
     category,
     createdBy: req.user.id
   })
-  .populate('opportunity', 'title')
+  .populate('opportunity_id', 'title')
   .populate('company', 'name')
   .populate('contact', 'name')
   .skip(skip)

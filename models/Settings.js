@@ -26,7 +26,7 @@ const settingsSchema = new mongoose.Schema({
   activity_types: [{
     type: String,
     trim: true,
-    enum: ['call', 'email', 'meeting', 'demo', 'proposal', 'follow_up', 'task', 'note', 'other']
+    enum: ['call', 'email', 'meeting', 'demo', 'proposal', 'follow_up', 'task', 'note', 'other', 'Call', 'Email', 'Meeting', 'Demo', 'Proposal', 'Follow-up']
   }],
   defaultSettings: {
     theme: {
@@ -48,6 +48,13 @@ const settingsSchema = new mongoose.Schema({
       type: String,
       default: 'UTC'
     }
+  },
+  smsSettings: {
+    enabled: { type: Boolean, default: false },
+    twilioAccountSid: { type: String, trim: true },
+    twilioAuthToken: { type: String, trim: true },
+    twilioPhoneNumber: { type: String, trim: true },
+    recipientPhoneNumber: { type: String, trim: true }
   },
   createdBy: {
     type: mongoose.Schema.Types.ObjectId,
@@ -74,6 +81,24 @@ settingsSchema.pre('save', function(next) {
   // Set default activity types if not provided
   if (!this.activity_types || this.activity_types.length === 0) {
     this.activity_types = ['call', 'email', 'meeting', 'task', 'note'];
+  }
+
+  // Normalize activity types to lowercase
+  if (this.activity_types && this.activity_types.length > 0) {
+    this.activity_types = this.activity_types.map(type => {
+      switch (type.toLowerCase()) {
+        case 'call': return 'call';
+        case 'email': return 'email';
+        case 'meeting': return 'meeting';
+        case 'demo': return 'demo';
+        case 'proposal': return 'proposal';
+        case 'follow-up': case 'follow_up': return 'follow_up';
+        case 'task': return 'task';
+        case 'note': return 'note';
+        case 'other': return 'other';
+        default: return type.toLowerCase();
+      }
+    });
   }
 
   next();

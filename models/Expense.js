@@ -180,7 +180,7 @@ expenseSchema.statics.findByDateRange = function(startDate, endDate, userId) {
     },
     createdBy: userId
   })
-  .populate('opportunity')
+  .populate('opportunity_id')
   .populate('company')
   .populate('contact')
   .sort({ date: -1 });
@@ -191,7 +191,7 @@ expenseSchema.statics.findByCategory = function(category, userId) {
     category,
     createdBy: userId
   })
-  .populate('opportunity')
+  .populate('opportunity_id')
   .sort({ date: -1 });
 };
 

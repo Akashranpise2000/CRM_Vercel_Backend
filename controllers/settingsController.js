@@ -10,9 +10,11 @@ const getSettings = asyncHandler(async (req, res) => {
   // If no settings exist, create default settings
   if (!settings) {
     settings = await Settings.create({
+      user_name: req.user.name || 'User',
+      user_email: req.user.email || null,
       createdBy: req.user.id,
       sectors: ['Technology', 'Healthcare', 'Finance', 'Manufacturing', 'Energy', 'Education', 'Retail', 'Media'],
-      activity_types: ['Call', 'Email', 'Meeting', 'Demo', 'Proposal', 'Follow-up']
+      activity_types: ['call', 'email', 'meeting', 'demo', 'proposal', 'follow_up']
     });
   }
 

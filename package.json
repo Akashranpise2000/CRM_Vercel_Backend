@@ -29,7 +29,8 @@
     "helmet": "^7.0.0",
     "jsonwebtoken": "^9.0.2",
     "mongoose": "^7.5.0",
-    "morgan": "^1.10.0"
+    "morgan": "^1.10.0",
+    "twilio": "^5.11.1"
   },
   "devDependencies": {
     "eslint": "^8.49.0",
