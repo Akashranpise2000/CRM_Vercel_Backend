@@ -37,10 +37,9 @@ const app = express();
 app.use(helmet());
 
 /* ---------------- CORS (VERY IMPORTANT) ---------------- */
-const allowedOrigins = [
-  'http://localhost:5173',
-  'https://your-frontend.vercel.app'
-];
+const allowedOrigins = process.env.CORS_ORIGINS
+  ? process.env.CORS_ORIGINS.split(',')
+  : ['http://localhost:5173'];
 
 app.use(
   cors({
@@ -51,7 +50,6 @@ app.use(
         callback(new Error('CORS not allowed'));
       }
     },
-    credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization']
   })
