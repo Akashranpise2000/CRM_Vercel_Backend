@@ -1,10 +1,6 @@
-const express = require("express");
-const app = express();
-
-app.use(express.json());
-
 app.get("/", (req, res) => {
-  res.send("Backend running on Vercel");
+  res.status(200).json({
+    success: true,
+    message: "Backend is running successfully 🚀"
+  });
 });
-
-module.exports = app;
