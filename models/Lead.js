@@ -85,8 +85,7 @@ const leadSchema = new mongoose.Schema({
   score: {
     type: Number,
     min: [0, 'Score cannot be less than 0'],
-    max: [100, 'Score cannot be more than 100'],
-    default: 0
+    max: [100, 'Score cannot be more than 100']
   },
   tags: [{
     type: String,

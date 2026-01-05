@@ -61,8 +61,7 @@ const opportunitySchema = new mongoose.Schema({
   probability: {
     type: Number,
     min: [0, 'Probability cannot be less than 0'],
-    max: [100, 'Probability cannot be more than 100'],
-    default: 0
+    max: [100, 'Probability cannot be more than 100']
   },
   close_date: {
     type: Date,
